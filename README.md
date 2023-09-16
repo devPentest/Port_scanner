@@ -14,31 +14,35 @@ This project is a port scanner implemented in [Python]. It allows you to scan a 
 
 1. Clone the repository:
 
-   ```bash
+   ```
+   bash
    git clone git@github.com:devPentest/Port_scanner.git
+   ```
 
 ## Using
 
 To use the Port Scanner, follow the instructions below:
 1 Clone the repository:
+```
 git clone git@github.com:devPentest/Port_scanner.git
+```
 
 2 Navigate to the project directory:
-cd Port_scanner
+`cd Port_scanner`
 
 3 Install the dependencies:
 # If using Python
-pip install -r requirements.txt
+`pip install -r requirements.txt`
 
 # If using Node.js
-npm install
+`npm install`
 
 4 Run the port scanner:
 # If using Python
-python3 port_scanner.py
+`python3 port_scanner.py`
 
 # If using Node.js
-node port_scanner.js
+`node port_scanner.js`
 
 5 Follow the prompts or adjust the script parameters to specify the desired network range or host to scan.
 6 The port scanner will display the results of the network scan, active hosts, open ports, and any detected vulnerabilities.
