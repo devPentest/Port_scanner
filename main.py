@@ -1,68 +1,145 @@
-import scapy.all as scapy
-import subprocess
-import nmap
+# Importer les modules nécessaires
+import socket
+import optparse
+from threading import *
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# Créer un objet sémaphore pour gérer l'affichage des résultats
+screenLock = Semaphore(value=1)
+
+# Définir une fonction qui teste si un port est ouvert
 
 
-def scan_network(ip_range):
-    # Scan network with Scapy
-    arp_request = scapy.ARP(pdst=ip_range)
-    broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-    arp_request_broadcast = broadcast / arp_request
-    answered, _ = scapy.srp(arp_request_broadcast, timeout=1, verbose=False)
+def isPortOpen(host, port):
+    # Créer un objet socket
+    s = socket.socket()
+    try:
+        # Tenter de se connecter à l'hôte sur le port
+        s.connect((host, port))
+        # Acquérir le verrou d'affichage
+        screenLock.acquire()
+        # Afficher le résultat
+        print(f"Port {port} ouvert")
+    except Exception as e:
+        # Acquérir le verrou d'affichage
+        screenLock.acquire()
+        # Afficher le résultat
+        print(f"Port {port} fermé")
+    finally:
+        # Relâcher le verrou d'affichage
+        screenLock.release()
+        # Fermer le socket
+        s.close()
 
-    # Display active hosts
-    print("Active hosts on the network:")
-    print("IP\t\t\tMAC Address")
-    print("-----------------------------------------")
-    for result in answered:
-        print(result[1].psrc + "\t\t" + result[1].hwsrc)
-
-    # Return scan result
-    return answered
-
-
-def vulnerability_scan(ip):
-    # Execute vulnerability scan with Nmap using subprocess
-    print("Vulnerabilities detected on host {}: ".format(ip))
-    command = f"nmap -p- --script vulners --script-args vulners.showall {ip}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
-    output, _ = process.communicate()
-
-    # Display scan result
-    print(output.decode())
+# Définir une fonction qui scanne une liste de ports
 
 
-def scan_host(ip):
-    nm = nmap.PortScanner()
-    nm.scan(ip, arguments='-sV')
+def scan(host, ports):
+    try:
+        # Récupérer l'adresse IP de l'hôte
+        ip = socket.gethostbyname(host)
+    except Exception as e:
+        # Afficher l'erreur et quitter le programme
+        print(str(e))
+        exit(0)
+    try:
+        # Récupérer le nom de l'hôte
+        hostname = socket.gethostbyaddr(ip)
+        # Afficher les résultats
+        print(f"Résultats pour {hostname}")
+    except:
+        # Afficher les résultats
+        print(f"Résultats pour {ip}")
+    # Parcourir la liste de ports
+    for port in ports:
+        # Créer un objet thread qui appelle la fonction isPortOpen
+        t = Thread(target=isPortOpen, args=(ip, int(port)))
+        # Lancer le thread
+        t.start()
 
-    if nm[ip].state() == 'up':
-        print(f"Host {ip} is online.")
-        print("Open ports:")
-        for port in nm[ip]['tcp'].keys():
-            service = nm[ip]['tcp'][port]['name']
-            version = nm[ip]['tcp'][port]['version']
-            print(f"Port {port}: Service {service}, Version {version}")
-
-            if 'script_results' in nm[ip]['tcp'][port]:
-                # If 'script_results' key exists, display script results
-                script_results = nm[ip]['tcp'][port]['script_results']
-                print("Script results:")
-                for script_name, script_output in script_results.items():
-                    print(f"{script_name}: {script_output}")
-            else:
-                print("No scripts were executed for this port.")
-    else:
-        print(f"Host {ip} is offline.")
+# Définir une fonction qui envoie les logs par mail
 
 
-# Example usage: Scan the local network (192.168.1.0/24) and perform vulnerability scan for each active host
-network_range = "192.168.1.0/24"
-active_hosts = scan_network(network_range)
-print("-----------------------------------------")
-for result in active_hosts:
-    vulnerability_scan(result[1].psrc)
+def send_log(log_file, email_address, email_password, email_receiver):
+    # Créer un objet message
+    message = MIMEMultipart("alternative")
+    # Ajouter un sujet
+    message["Subject"] = "Rapport de scan de ports"
+    # Ajouter un émetteur
+    message["From"] = email_address
+    # Ajouter un destinataire
+    message["To"] = email_receiver
+    # Lire le contenu du fichier de log
+    with open(log_file, "r") as f:
+        log_content = f.read()
+    # Créer un objet MIMEText avec le contenu du log
+    log_mime = MIMEText(log_content, "plain")
+    # Attacher le MIMEText au message
+    message.attach(log_mime)
+    # Récupérer le serveur SMTP et le port du fournisseur de mail
+    smtp_address, smtp_port = get_smtp_info(email_address)
+    # Créer la connexion SSL
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(smtp_address, smtp_port, context=context) as server:
+        # Se connecter au compte
+        server.login(email_address, email_password)
+        # Envoyer le message
+        server.sendmail(email_address, email_receiver, message.as_string())
 
-# Example usage: Scan a specific host
-host = "192.168.1.1"
-scan_host(host)
+# Définir une fonction qui renvoie le serveur SMTP et le port en fonction du fournisseur de mail
+
+
+def get_smtp_info(email_address):
+    # Extraire le domaine du mail
+    domain = email_address.split("@")[1]
+    # Définir un dictionnaire des serveurs SMTP et des ports des principaux fournisseurs
+    smtp_dict = {
+        "gmail.com": ("smtp.gmail.com", 465),
+        "yahoo.com": ("smtp.mail.yahoo.com", 465),
+        "outlook.com": ("smtp.office365.com", 587),
+    }
+    # Renvoyer le serveur SMTP et le port correspondant au domaine, ou None si non trouvé
+    return smtp_dict.get(domain, None)
+
+
+# Définir le nom du fichier de log
+log_file = "keylog.txt"
+
+# Définir les informations sur l'adresse mail
+email_address = "example@gmail.com"
+email_password = "my_password"
+email_receiver = "another.example@yahoo.com"
+
+# Définir la fonction principale
+
+
+def main():
+    # Créer un objet parser pour gérer les options en ligne de commande
+    parser = optparse.OptionParser()
+    # Ajouter une option pour spécifier les ports à scanner
+    parser.add_option("-p", "--ports", dest="ports",
+                      default="21,22,23,80,443", help="Ports à scanner", type="string")
+    # Récupérer les options et les arguments
+    (options, args) = parser.parse_args()
+    # Convertir la liste de ports en une liste d'entiers
+    ports = [int(p) for p in options.ports.split(",")]
+    # Vérifier qu'un argument a été fourni
+    if len(args) < 1:
+        # Afficher un message d'erreur et quitter le programme
+        print("Il faut un hostname")
+        exit(0)
+    # Récupérer le premier argument comme l'hôte à scanner
+    host = args[0]
+    # Appeler la fonction scan
+    scan(host, ports)
+    # Appeler la fonction send_log
+    send_log(log_file, email_address, email_password, email_receiver)
+
+
+# Vérifier si le fichier est exécuté comme script principal
+if __name__ == "__main__":
+    # Appeler la fonction principale
+    main()
