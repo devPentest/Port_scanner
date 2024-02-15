@@ -34,6 +34,9 @@ git clone git@github.com:devPentest/Port_scanner.git
 # If using Python
 `pip install -r requirements.txt`
 
+# Launch
+`python3 main.py example.com` `python3 main.py example.com -p 21,22,23,80,443`
+
 # If using Node.js
 `npm install`
 
